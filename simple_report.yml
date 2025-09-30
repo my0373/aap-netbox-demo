@@ -1,0 +1,16 @@
+---
+- name: Report on NetBox devices
+  hosts: all
+  gather_facts: false
+
+  tasks:
+    - name: Build device report
+      ansible.builtin.debug:
+        msg:
+          - "Name: {{ inventory_hostname }}"
+          - "Region: {{ hostvars[inventory_hostname].region | default('N/A') }}"
+          - "Site: {{ hostvars[inventory_hostname].site | default('N/A') }}"
+          - "Location: {{ hostvars[inventory_hostname].location | default('N/A') }}"
+          - "Device Type: {{ hostvars[inventory_hostname].device_type | default('N/A') }}"
+          - "Tenant: {{ hostvars[inventory_hostname].tenant | default('N/A') }}"
+
