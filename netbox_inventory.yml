@@ -1,17 +1,3 @@
-# netbox_inventory.yml  (no Jinja here)
+# netbox_inventory.yml
 plugin: netbox.netbox.nb_inventory
-
-validate_certs: true
-config_context: false
-
-group_by:
-  - device_roles
-  - sites
-  - platforms
-
-query_filters:
-  - status: active
-
-device_query_filters:
-  - has_primary_ip: "true"
 
