@@ -1,23 +1,17 @@
 ---
 - name: Build NetBox device HTML report
-  hosts: all
+  hosts: localhost
   gather_facts: false
-
-  vars:
-    report_file: /runner/project/reports/netbox_devices.html
-
   tasks:
     - name: Ensure reports directory exists
       ansible.builtin.file:
         path: /runner/project/reports
         state: directory
         mode: "0755"
-      run_once: true
-      delegate_to: localhost
 
-    - name: Build HTML header
+    - name: Build HTML file
       ansible.builtin.copy:
-        dest: "{{ report_file }}"
+        dest: /runner/project/reports/netbox_devices.html
         mode: "0644"
         content: |
           <html>
@@ -29,7 +23,6 @@
               th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
               th { background-color: #f2f2f2; }
               tr:nth-child(even) { background-color: #fafafa; }
-              h1 { color: #333; }
             </style>
           </head>
           <body>
@@ -50,48 +43,30 @@
               <th>Tags</th>
               <th>Custom Fields</th>
             </tr>
-        run_once: true
-        delegate_to: localhost
-
-    - name: Append rows for each host
-      ansible.builtin.lineinfile:
-        path: "{{ report_file }}"
-        insertafter: "</tr>"
-        line: |
-          <tr>
-            <td>{{ inventory_hostname }}</td>
-            <td>{{ ansible_host | default('') }}</td>
-            <td>{{ device_roles | join(', ') if device_roles is defined else '' }}</td>
-            <td>{{ device_types | join(', ') if device_types is defined else '' }}</td>
-            <td>{{ manufacturers | join(', ') if manufacturers is defined else '' }}</td>
-            <td>{{ sites | join(', ') if sites is defined else '' }}</td>
-            <td>{{ regions | join(', ') if regions is defined else '' }}</td>
-            <td>{{ tenants | join(', ') if tenants is defined else '' }}</td>
-            <td>{{ primary_ip4 | default('') }}</td>
-            <td>{{ serial | default('') }}</td>
-            <td>{{ status.label | default('') }}</td>
-            <td>{{ tags | join(', ') if tags is defined else '' }}</td>
-            <td>
-              {% if custom_fields is defined %}
-                {% for k,v in custom_fields.items() %}
-                  {{ k }}={{ v }}<br/>
-                {% endfor %}
-              {% endif %}
-            </td>
-          </tr>
-      loop: "{{ groups['all'] | list }}"
-      loop_control:
-        loop_var: inventory_hostname
-      delegate_to: localhost
-
-    - name: Append HTML footer
-      ansible.builtin.blockinfile:
-        path: "{{ report_file }}"
-        insertafter: EOF
-        block: |
+            {% for h in groups['all'] %}
+            <tr>
+              <td>{{ h }}</td>
+              <td>{{ hostvars[h].ansible_host | default('') }}</td>
+              <td>{{ hostvars[h].device_roles | join(', ') if hostvars[h].device_roles is defined else '' }}</td>
+              <td>{{ hostvars[h].device_types | join(', ') if hostvars[h].device_types is defined else '' }}</td>
+              <td>{{ hostvars[h].manufacturers | join(', ') if hostvars[h].manufacturers is defined else '' }}</td>
+              <td>{{ hostvars[h].sites | join(', ') if hostvars[h].sites is defined else '' }}</td>
+              <td>{{ hostvars[h].regions | join(', ') if hostvars[h].regions is defined else '' }}</td>
+              <td>{{ hostvars[h].tenants | join(', ') if hostvars[h].tenants is defined else '' }}</td>
+              <td>{{ hostvars[h].primary_ip4 | default('') }}</td>
+              <td>{{ hostvars[h].serial | default('') }}</td>
+              <td>{{ hostvars[h].status.label | default('') }}</td>
+              <td>{{ hostvars[h].tags | join(', ') if hostvars[h].tags is defined else '' }}</td>
+              <td>
+                {% if hostvars[h].custom_fields is defined %}
+                  {% for k,v in hostvars[h].custom_fields.items() %}
+                    {{ k }}={{ v }}<br/>
+                  {% endfor %}
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
           </table>
           </body>
           </html>
-      run_once: true
-      delegate_to: localhost
 
