@@ -1,16 +1,35 @@
 ---
-- name: Report on NetBox devices
+- name: NetBox device report
   hosts: all
   gather_facts: false
 
   tasks:
-    - name: Build device report
+    - name: Print a line per device
       ansible.builtin.debug:
         msg:
           - "Name: {{ inventory_hostname }}"
-          - "Region: {{ hostvars[inventory_hostname].region | default('N/A') }}"
-          - "Site: {{ hostvars[inventory_hostname].site | default('N/A') }}"
-          - "Location: {{ hostvars[inventory_hostname].location | default('N/A') }}"
-          - "Device Type: {{ hostvars[inventory_hostname].device_type | default('N/A') }}"
-          - "Tenant: {{ hostvars[inventory_hostname].tenant | default('N/A') }}"
+          - "Region: {{ nb_region | default('N/A') }}"
+          - "Site: {{ nb_site | default('N/A') }}"
+          - "Location: {{ nb_location | default('N/A') }}"
+          - "Device Type: {{ nb_device_type | default('N/A') }}"
+          - "Tenant: {{ nb_tenant | default('N/A') }}"
+
+    - name: Write CSV report to project workspace
+      run_once: true
+      delegate_to: localhost
+      vars:
+        _hosts: "{{ groups['all'] | list }}"
+      ansible.builtin.copy:
+        dest: /runner/project/device_report.csv
+        mode: "0644"
+        content: |
+          name,region,site,location,device_type,tenant
+          {% for h in _hosts %}
+          {{ h | replace(',', ' ') }},
+          {{ (hostvars[h].nb_region | default('')) | replace(',', ' ') }},
+          {{ (hostvars[h].nb_site | default('')) | replace(',', ' ') }},
+          {{ (hostvars[h].nb_location | default('')) | replace(',', ' ') }},
+          {{ (hostvars[h].nb_device_type | default('')) | replace(',', ' ') }},
+          {{ (hostvars[h].nb_tenant | default('')) | replace(',', ' ') }}
+          {% endfor %}
 
