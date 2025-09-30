@@ -1,32 +1,40 @@
 ---
-- name: Build NetBox device HTML report
+- name: Build extended NetBox device HTML report
   hosts: localhost
   gather_facts: false
+
+  vars:
+    report_path: /runner/artifacts/netbox_devices.html
+
   tasks:
-    - name: Ensure reports directory exists
+    - name: Ensure artifacts dir exists
       ansible.builtin.file:
-        path: /runner/project/reports
+        path: /runner/artifacts
         state: directory
         mode: "0755"
 
-    - name: Build HTML file
+    - name: Render HTML report
       ansible.builtin.copy:
-        dest: /runner/project/reports/netbox_devices.html
+        dest: "{{ report_path }}"
         mode: "0644"
         content: |
           <html>
           <head>
             <title>NetBox Device Report</title>
+            <meta charset="utf-8"/>
             <style>
               body { font-family: Arial, sans-serif; margin: 20px; }
               table { border-collapse: collapse; width: 100%; }
-              th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+              th, td { border: 1px solid #ddd; padding: 6px; text-align: left; vertical-align: top; }
               th { background-color: #f2f2f2; }
               tr:nth-child(even) { background-color: #fafafa; }
+              h1 { color: #333; }
+              code { background: #f5f5f5; padding: 2px 4px; }
             </style>
           </head>
           <body>
           <h1>NetBox Device Report</h1>
+          <p>Generated: {{ '%Y-%m-%d %H:%M:%S' | strftime() }}</p>
           <table>
             <tr>
               <th>Name</th>
@@ -36,32 +44,48 @@
               <th>Manufacturer(s)</th>
               <th>Site(s)</th>
               <th>Region(s)</th>
+              <th>Site Group(s)</th>
+              <th>Location(s)</th>
               <th>Tenant(s)</th>
               <th>Primary IPv4</th>
               <th>Serial</th>
               <th>Status</th>
               <th>Tags</th>
+              <th>Services</th>
               <th>Custom Fields</th>
+              <th>Local Context</th>
             </tr>
             {% for h in groups['all'] %}
             <tr>
               <td>{{ h }}</td>
               <td>{{ hostvars[h].ansible_host | default('') }}</td>
-              <td>{{ hostvars[h].device_roles | join(', ') if hostvars[h].device_roles is defined else '' }}</td>
-              <td>{{ hostvars[h].device_types | join(', ') if hostvars[h].device_types is defined else '' }}</td>
-              <td>{{ hostvars[h].manufacturers | join(', ') if hostvars[h].manufacturers is defined else '' }}</td>
-              <td>{{ hostvars[h].sites | join(', ') if hostvars[h].sites is defined else '' }}</td>
-              <td>{{ hostvars[h].regions | join(', ') if hostvars[h].regions is defined else '' }}</td>
-              <td>{{ hostvars[h].tenants | join(', ') if hostvars[h].tenants is defined else '' }}</td>
+              <td>{{ (hostvars[h].device_roles | default([])) | join(', ') }}</td>
+              <td>{{ (hostvars[h].device_types | default([])) | join(', ') }}</td>
+              <td>{{ (hostvars[h].manufacturers | default([])) | join(', ') }}</td>
+              <td>{{ (hostvars[h].sites | default([])) | join(', ') }}</td>
+              <td>{{ (hostvars[h].regions | default([])) | join(', ') }}</td>
+              <td>{{ (hostvars[h].site_groups | default([])) | join(', ') }}</td>
+              <td>{{ (hostvars[h].locations | default([])) | join(', ') }}</td>
+              <td>{{ (hostvars[h].tenants | default([])) | join(', ') }}</td>
               <td>{{ hostvars[h].primary_ip4 | default('') }}</td>
               <td>{{ hostvars[h].serial | default('') }}</td>
-              <td>{{ hostvars[h].status.label | default('') }}</td>
-              <td>{{ hostvars[h].tags | join(', ') if hostvars[h].tags is defined else '' }}</td>
+              <td>
+                {% if hostvars[h].status is defined %}
+                  {{ hostvars[h].status.label | default(hostvars[h].status) }}
+                {% endif %}
+              </td>
+              <td>{{ (hostvars[h].tags | default([])) | join(', ') }}</td>
+              <td>{{ (hostvars[h].services | default([])) | join(', ') }}</td>
               <td>
                 {% if hostvars[h].custom_fields is defined %}
                   {% for k,v in hostvars[h].custom_fields.items() %}
-                    {{ k }}={{ v }}<br/>
+                    <code>{{ k }}={{ v }}</code><br/>
                   {% endfor %}
+                {% endif %}
+              </td>
+              <td>
+                {% if hostvars[h].local_context_data is defined %}
+                  {{ hostvars[h].local_context_data | to_nice_json }}
                 {% endif %}
               </td>
             </tr>
@@ -69,4 +93,13 @@
           </table>
           </body>
           </html>
+
+    - name: Slurp report
+      ansible.builtin.slurp:
+        src: "{{ report_path }}"
+      register: _slurped
+
+    - name: Show data URL (copy-paste this into browser)
+      ansible.builtin.debug:
+        msg: "data:text/html;base64,{{ _slurped.content }}"
 
