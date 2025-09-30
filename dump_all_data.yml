@@ -1,0 +1,37 @@
+---
+- name: Dump all NetBox inventory data per device
+  hosts: all
+  gather_facts: false
+
+  tasks:
+    - name: Print full hostvars for this device
+      ansible.builtin.debug:
+        msg: "{{ hostvars[inventory_hostname] | to_nice_json }}"
+      # Remove the 'verbosity' line if you want it to always print
+      verbosity: 0
+
+    # --- File artifacts (per-host and combined) ---
+    - name: Ensure reports directory exists in project workspace
+      ansible.builtin.file:
+        path: /runner/project/reports
+        state: directory
+        mode: "0755"
+      run_once: true
+      delegate_to: localhost
+
+    - name: Write one JSON file per device
+      ansible.builtin.copy:
+        dest: "/runner/project/reports/{{ inventory_hostname | regex_replace('[^A-Za-z0-9_.-]', '_') }}.json"
+        mode: "0644"
+        content: "{{ hostvars[inventory_hostname] | to_nice_json }}"
+      delegate_to: localhost
+
+    - name: Build combined hostvars dictionary
+      ansible.builtin.set_fact:
+        __combined_hostvars: "{{ (__combined_hostvars | default({})) | combine({ item: hostvars[item] }) }}"
+      loop: "{{ groups['all'] | list }}"
+      run_once: true
+
+    - name: Write combined JSON file
+      ansible.builtin.copy:
+
