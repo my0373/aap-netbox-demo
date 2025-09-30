@@ -1,0 +1,26 @@
+---
+- hosts: localhost
+  gather_facts: false
+  vars:
+    url: "https://optx6937.cloud.netboxapp.com/api/status/"
+  tasks:
+    - name: Show EE details
+      ansible.builtin.command: bash -lc 'python -V; ansible --version; ansible-galaxy collection list | egrep "(netbox\.netbox|ansible\.netcommon)"'
+      register: eeinfo
+      changed_when: false
+    - debug: var=eeinfo.stdout_lines
+
+    - name: DNS check
+      ansible.builtin.command: bash -lc 'getent hosts optx6937.cloud.netboxapp.com || true'
+      register: dns
+      changed_when: false
+    - debug: var=dns.stdout_lines
+
+    - name: Reachability check (no cert verify) - should return JSON
+      ansible.builtin.uri:
+        url: "{{ url }}"
+        method: GET
+        validate_certs: false
+      register: status_nc
+    - debug: var=status_nc.json
+
