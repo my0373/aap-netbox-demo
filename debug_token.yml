@@ -1,0 +1,15 @@
+- hosts: localhost
+  gather_facts: false
+  vars:
+    url: "https://optx6937.cloud.netboxapp.com/api/status/"
+    token: "YOUR_ACTUAL_TOKEN"     # wrap in quotes
+  tasks:
+    - name: Hit status with token (expect 200)
+      ansible.builtin.uri:
+        url: "{{ url }}"
+        headers:
+          Authorization: "Token {{ token }}"
+        validate_certs: true
+      register: r
+    - debug: var=r.status
+
