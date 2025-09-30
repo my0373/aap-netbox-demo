@@ -1,9 +1,5 @@
-# netbox_inventory.yml
+# netbox_inventory.yml  (no Jinja here)
 plugin: netbox.netbox.nb_inventory
-
-# Pull from your custom credential's env injectors
-api_endpoint: "{{ lookup('ansible.builtin.env', 'NETBOX_API') }}"
-token: "{{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"
 
 validate_certs: true
 config_context: false
