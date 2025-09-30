@@ -1,0 +1,97 @@
+---
+- name: Build NetBox device HTML report
+  hosts: all
+  gather_facts: false
+
+  vars:
+    report_file: /runner/project/reports/netbox_devices.html
+
+  tasks:
+    - name: Ensure reports directory exists
+      ansible.builtin.file:
+        path: /runner/project/reports
+        state: directory
+        mode: "0755"
+      run_once: true
+      delegate_to: localhost
+
+    - name: Build HTML header
+      ansible.builtin.copy:
+        dest: "{{ report_file }}"
+        mode: "0644"
+        content: |
+          <html>
+          <head>
+            <title>NetBox Device Report</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 20px; }
+              table { border-collapse: collapse; width: 100%; }
+              th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+              th { background-color: #f2f2f2; }
+              tr:nth-child(even) { background-color: #fafafa; }
+              h1 { color: #333; }
+            </style>
+          </head>
+          <body>
+          <h1>NetBox Device Report</h1>
+          <table>
+            <tr>
+              <th>Name</th>
+              <th>ansible_host</th>
+              <th>Role(s)</th>
+              <th>Type(s)</th>
+              <th>Manufacturer(s)</th>
+              <th>Site(s)</th>
+              <th>Region(s)</th>
+              <th>Tenant(s)</th>
+              <th>Primary IPv4</th>
+              <th>Serial</th>
+              <th>Status</th>
+              <th>Tags</th>
+              <th>Custom Fields</th>
+            </tr>
+        run_once: true
+        delegate_to: localhost
+
+    - name: Append rows for each host
+      ansible.builtin.lineinfile:
+        path: "{{ report_file }}"
+        insertafter: "</tr>"
+        line: |
+          <tr>
+            <td>{{ inventory_hostname }}</td>
+            <td>{{ ansible_host | default('') }}</td>
+            <td>{{ device_roles | join(', ') if device_roles is defined else '' }}</td>
+            <td>{{ device_types | join(', ') if device_types is defined else '' }}</td>
+            <td>{{ manufacturers | join(', ') if manufacturers is defined else '' }}</td>
+            <td>{{ sites | join(', ') if sites is defined else '' }}</td>
+            <td>{{ regions | join(', ') if regions is defined else '' }}</td>
+            <td>{{ tenants | join(', ') if tenants is defined else '' }}</td>
+            <td>{{ primary_ip4 | default('') }}</td>
+            <td>{{ serial | default('') }}</td>
+            <td>{{ status.label | default('') }}</td>
+            <td>{{ tags | join(', ') if tags is defined else '' }}</td>
+            <td>
+              {% if custom_fields is defined %}
+                {% for k,v in custom_fields.items() %}
+                  {{ k }}={{ v }}<br/>
+                {% endfor %}
+              {% endif %}
+            </td>
+          </tr>
+      loop: "{{ groups['all'] | list }}"
+      loop_control:
+        loop_var: inventory_hostname
+      delegate_to: localhost
+
+    - name: Append HTML footer
+      ansible.builtin.blockinfile:
+        path: "{{ report_file }}"
+        insertafter: EOF
+        block: |
+          </table>
+          </body>
+          </html>
+      run_once: true
+      delegate_to: localhost
+
