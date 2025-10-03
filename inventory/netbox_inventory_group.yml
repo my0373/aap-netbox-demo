@@ -1,0 +1,23 @@
+plugin: netbox.netbox.nb_inventory
+group_by:
+  - device_roles
+  - sites
+  - platforms
+  - tags
+compose:
+  nb_name: device.name
+  nb_role: device.device_role.name
+  nb_platform: device.platform.name
+  nb_tenant: device.tenant.name
+  nb_site: device.site.name
+  nb_region: device.site.region.name
+  nb_location: device.location.name
+  nb_rack: device.rack.name
+  nb_device_type: device.device_type.model
+  nb_serial: device.serial
+  nb_asset_tag: device.asset_tag
+  nb_primary_ip: device.primary_ip.address
+  nb_description: device.description
+  nb_tags: device.tags
+  nb_custom_fields: device.custom_fields
+strict: false
