@@ -1,0 +1,22 @@
+---
+- name: Debug inventory groups
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Show all groups
+      ansible.builtin.debug:
+        msg: "{{ groups.keys() | list }}"
+    
+    - name: Show all hosts
+      ansible.builtin.debug:
+        msg: "{{ groups['all'] }}"
+
+- name: Show host variables for each host
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Display tags for this host
+      ansible.builtin.debug:
+        msg: 
+          - "Host: {{ inventory_hostname }}"
+          - "Tags: {{ tags | default('NO TAGS VARIABLE') }}"
