@@ -1,0 +1,25 @@
+---
+- name: Summarise NetBox inventory data for ansible-tagged hosts
+  hosts: tags_ansible
+  gather_facts: false
+  tasks:
+    - name: Show NetBox device details
+      ansible.builtin.debug:
+        msg:
+          - "Name: {{ inventory_hostname }}"
+          - "ansible_host: {{ ansible_host | default('N/A') }}"
+          - "Role(s): {{ (device_roles | default([])) | join(', ') }}"
+          - "Type(s): {{ (device_types | default([])) | join(', ') }}"
+          - "Manufacturer(s): {{ (manufacturers | default([])) | join(', ') }}"
+          - "Site(s): {{ (sites | default([])) | join(', ') }}"
+          - "Region(s): {{ (regions | default([])) | join(', ') }}"
+          - "Site Group(s): {{ (site_groups | default([])) | join(', ') }}"
+          - "Location(s): {{ (locations | default([])) | join(', ') }}"
+          - "Tenant(s): {{ (tenants | default([])) | join(', ') }}"
+          - "Primary IPv4: {{ primary_ip4 | default('N/A') }}"
+          - "Serial: {{ serial | default('N/A') }}"
+          - "Status: {{ status.label | default(status | default('N/A')) }}"
+          - "Tags: {{ (tags | default([])) | join(', ') }}"
+          - "Services: {{ (services | default([])) | join(', ') }}"
+          - "Custom Fields: {{ custom_fields | default({}) | to_nice_json }}"
+          - "Local Context: {{ local_context_data | default({}) | to_nice_json }}"
