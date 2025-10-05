@@ -1,6 +1,6 @@
 ---
 - name: Summarise NetBox inventory data for ansible-tagged hosts
-  hosts: tag_ansible
+  hosts: tags_ansible
   gather_facts: false
   tasks:
     - name: Show NetBox device details
