@@ -1,0 +1,101 @@
+---
+- name: Dump Complete NetBox Device Webhook Data
+  hosts: localhost
+  gather_facts: true
+  
+  tasks:
+    - name: Display complete device data from NetBox
+      ansible.builtin.debug:
+        msg: "{{ device_data | to_nice_json }}"
+      when: device_data is defined
+
+    - name: Display all extra_vars passed
+      ansible.builtin.debug:
+        msg: "{{ vars | to_nice_json }}"
+
+    - name: Extract and display standard device fields
+      ansible.builtin.debug:
+        msg:
+          - "==================== DEVICE INFORMATION ===================="
+          - "Name: {{ device_data.name | default('N/A') }}"
+          - "ID: {{ device_data.id | default('N/A') }}"
+          - "Status: {{ device_data.status | default('N/A') }}"
+          - "Site: {{ device_data.site.name | default('N/A') }}"
+          - "Location: {{ device_data.location.name | default('N/A') }}"
+          - "Rack: {{ device_data.rack.name | default('N/A') }}"
+          - "Role: {{ device_data.role.name | default('N/A') }}"
+          - "Manufacturer: {{ device_data.device_type.manufacturer.name | default('N/A') }}"
+          - "Device Type: {{ device_data.device_type.model | default('N/A') }}"
+          - "Serial Number: {{ device_data.serial | default('N/A') }}"
+          - "Asset Tag: {{ device_data.asset_tag | default('N/A') }}"
+          - "Platform: {{ device_data.platform.name | default('N/A') }}"
+          - "Primary IPv4: {{ device_data.primary_ip4.address | default('N/A') }}"
+          - "Primary IPv6: {{ device_data.primary_ip6.address | default('N/A') }}"
+          - "Tenant: {{ device_data.tenant.name | default('N/A') }}"
+      when: device_data is defined
+
+    - name: Display custom fields
+      ansible.builtin.debug:
+        msg: 
+          - "==================== CUSTOM FIELDS ===================="
+          - "{{ device_data.custom_fields | to_nice_json }}"
+      when: 
+        - device_data is defined
+        - device_data.custom_fields is defined
+
+    - name: Display device tags
+      ansible.builtin.debug:
+        msg:
+          - "==================== TAGS ===================="
+          - "{{ device_data.tags | map(attribute='name') | list }}"
+      when: 
+        - device_data is defined
+        - device_data.tags is defined
+
+    - name: Display webhook metadata
+      ansible.builtin.debug:
+        msg:
+          - "==================== WEBHOOK METADATA ===================="
+          - "Event: {{ event | default('N/A') }}"
+          - "Timestamp: {{ timestamp | default('N/A') }}"
+          - "Username: {{ username | default('N/A') }}"
+          - "Request ID: {{ request_id | default('N/A') }}"
+      when: event is defined or timestamp is defined
+
+    - name: Create output directory
+      ansible.builtin.file:
+        path: /tmp/netbox_webhooks
+        state: directory
+        mode: '0755'
+
+    - name: Save complete webhook payload to JSON file
+      ansible.builtin.copy:
+        content: |
+          {
+            "webhook_metadata": {
+              "event": "{{ event | default('unknown') }}",
+              "timestamp": "{{ timestamp | default('unknown') }}",
+              "username": "{{ username | default('unknown') }}",
+              "request_id": "{{ request_id | default('unknown') }}"
+            },
+            "device_data": {{ device_data | to_nice_json }},
+            "all_vars": {{ vars | to_nice_json }}
+          }
+        dest: "/tmp/netbox_webhooks/device_{{ device_data.name | default('unknown') }}_{{ ansible_date_time.epoch }}.json"
+        mode: '0644'
+      when: device_data is defined
+
+    - name: Display saved file location
+      ansible.builtin.debug:
+        msg: "Complete webhook data saved to /tmp/netbox_webhooks/device_{{ device_data.name | default('unknown') }}_{{ ansible_date_time.epoch }}.json"
+      when: device_data is defined
+
+    - name: List all custom field names and values
+      ansible.builtin.debug:
+        msg: "Custom Field: {{ item.key }} = {{ item.value }}"
+      loop: "{{ device_data.custom_fields | dict2items }}"
+      when: 
+        - device_data is defined
+        - device_data.custom_fields is defined
+      loop_control:
+        label: "{{ item.key }}"
