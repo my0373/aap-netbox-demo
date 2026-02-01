@@ -5,7 +5,7 @@
 
   tasks:
     # ------------------------------------------------------------
-    # 1) Read device ID from webhook (AAP injects extra_vars directly)
+    # 1) Assert webhook injected device_data
     # ------------------------------------------------------------
     - name: Assert device_data is present
       ansible.builtin.assert:
@@ -18,36 +18,15 @@
       ansible.builtin.set_fact:
         device_id: "{{ device_data.id }}"
 
+    # ------------------------------------------------------------
+    # 2) Read NetBox connection info from environment (AAP credential)
+    # ------------------------------------------------------------
+    - name: Read NetBox connection from environment
+      ansible.builtin.set_fact:
+        netbox_url: "{{ lookup('env', 'NETBOX_URL') | default('', true) }}"
+        netbox_token: "{{ lookup('env', 'NETBOX_TOKEN') | default('', true) }}"
+
     - name: Assert NetBox connection vars are present
       ansible.builtin.assert:
         that:
-          - netbox_url is defined
-          - netbox_token is defined
-        fail_msg: "netbox_url / netbox_token not provided (AAP credential or job extra vars)"
-
-    # ------------------------------------------------------------
-    # 2) Fetch device from NetBox MAIN branch
-    # ------------------------------------------------------------
-    - name: Build NetBox device API URL (MAIN)
-      ansible.builtin.set_fact:
-        device_api_url: "{{ netbox_url | regex_replace('/$', '') }}/api/dcim/devices/{{ device_id }}/"
-
-    - name: Get device from NetBox MAIN
-      ansible.builtin.uri:
-        url: "{{ device_api_url }}"
-        method: GET
-        headers:
-          Authorization: "Token {{ netbox_token }}"
-          Accept: "application/json"
-        return_content: true
-        validate_certs: true
-        status_code: 200
-      register: device_main
-      no_log: true
-
-    # ------------------------------------------------------------
-    # 3) Print authoritative MAIN data
-    # ------------------------------------------------------------
-    - name: Show device data from MAIN branch
-      ansible.builtin.debug:
-        var: device_main.json
+          - netbox
