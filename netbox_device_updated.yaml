@@ -3,13 +3,13 @@
   gather_facts: false
 
   vars:
-    # Provide these via AAP credential/env vars/extra vars
+    # Recommended: inject these via an AAP Credential (env vars)
     netbox_url: "{{ lookup('env', 'NETBOX_URL') | default('', true) }}"
     netbox_token: "{{ lookup('env', 'NETBOX_TOKEN') | default('', true) }}"
 
   tasks:
-    # --- Debug (keep while validating; remove later if you want) ---
-    - name: Show extra_vars if present (AAP injects NetBox webhook extra_vars here)
+    # --- Optional debug (kept safe; skips if not present) ---
+    - name: Show extra_vars if present (AAP often injects NetBox webhook extra_vars here)
       ansible.builtin.debug:
         var: extra_vars
       when: extra_vars is defined
@@ -19,7 +19,7 @@
         var: awx_webhook_payload
       when: awx_webhook_payload is defined
 
-    - name: Show tower_webhook_payload if present
+    - name: Show tower_webhook_payload if present (legacy Tower)
       ansible.builtin.debug:
         var: tower_webhook_payload
       when: tower_webhook_payload is defined
@@ -62,16 +62,17 @@
           - device_data is mapping
           - device_data.id is defined
         fail_msg: >-
-          device_data.id not found. Check the debug output for extra_vars/awx_webhook_payload/tower_webhook_payload.
+          device_data.id not found. Ensure NetBox webhook body template sends
+          extra_vars.device_data.id (and that AAP is receiving it).
 
     - name: Assert NetBox connection vars are present
       ansible.builtin.assert:
         that:
           - netbox_url | length > 0
           - netbox_token | length > 0
-        fail_msg: "Missing NETBOX_URL/NETBOX_TOKEN (set as env vars or supply as extra vars/credential)."
+        fail_msg: "Missing NETBOX_URL/NETBOX_TOKEN (inject via AAP Credential or env vars)."
 
-    # --- Main-branch gate (skip if object has branch changes) ---
+    # --- Main-branch gate: query Branching changes endpoint; skip if object has branch changes ---
     - name: Set branch gate inputs (fallbacks)
       ansible.builtin.set_fact:
         branch_object_id: "{{ branch_gate.object_id | default(device_data.id) }}"
@@ -89,9 +90,7 @@
         return_content: true
         status_code: 200
       register: branch_changes
-      retries: 3
-      delay: 1
-      until: branch_changes.status == 200
+      no_log: true  # prevents headers/token from being printed if verbosity is high
 
     - name: Decide whether to proceed (main branch only)
       ansible.builtin.set_fact:
@@ -115,7 +114,7 @@
       ansible.builtin.meta: end_play
       when: not is_main_branch
 
-    # --- From here down: your existing “print/debug” tasks or real automation ---
+    # --- From here down: your automation (runs only on main) ---
     - name: Show device data (main only)
       ansible.builtin.debug:
         var: device_data
@@ -124,7 +123,7 @@
       ansible.builtin.debug:
         var: event_meta
 
-    - name: Show branch gate inputs / decision (main only)
+    - name: Show branch decision (main only)
       ansible.builtin.debug:
         msg:
           branch_object_id: "{{ branch_object_id }}"
