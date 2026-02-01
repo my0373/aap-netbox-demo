@@ -3,12 +3,6 @@
   gather_facts: false
   become: false
 
-  vars:
-    # Inject via AAP Credential (env vars) or Job Template extra vars
-    netbox_url: "{{ netbox_url | default(lookup('env', 'NETBOX_URL'), true) | default('', true) }}"
-    netbox_token: "{{ netbox_token | default(lookup('env', 'NETBOX_TOKEN'), true) | default('', true) }}"
-    netbox_validate_certs: true
-
   tasks:
     # ------------------------------------------------------------
     # 1) Read device ID from webhook (AAP injects extra_vars directly)
@@ -27,9 +21,9 @@
     - name: Assert NetBox connection vars are present
       ansible.builtin.assert:
         that:
-          - netbox_url | length > 0
-          - netbox_token | length > 0
-        fail_msg: "Missing netbox_url / netbox_token (AAP credential or env vars)"
+          - netbox_url is defined
+          - netbox_token is defined
+        fail_msg: "netbox_url / netbox_token not provided (AAP credential or job extra vars)"
 
     # ------------------------------------------------------------
     # 2) Fetch device from NetBox MAIN branch
@@ -46,7 +40,7 @@
           Authorization: "Token {{ netbox_token }}"
           Accept: "application/json"
         return_content: true
-        validate_certs: "{{ netbox_validate_certs }}"
+        validate_certs: true
         status_code: 200
       register: device_main
       no_log: true
