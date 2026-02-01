@@ -1,0 +1,7 @@
+- name: Print NetBox device webhook data
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Show all vars
+      ansible.builtin.debug:
+        var: vars
