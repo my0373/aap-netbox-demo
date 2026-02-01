@@ -68,12 +68,14 @@
         branch_object_id: "{{ branch_gate.object_id | default(device_data.id) }}"
         branch_model: "{{ branch_gate.model | default('dcim.device') }}"
 
-    - name: Build Branching changes URL (no whitespace issues)
+    - name: Build base URL and query string for Branching changes lookup
       ansible.builtin.set_fact:
         netbox_base_url: "{{ netbox_url | regex_replace('/$', '') }}"
-        branching_path: "/api/plugins/branching/changes/"
         branching_query: "object_id={{ branch_object_id }}&model={{ branch_model }}"
-        branching_url: "{{ netbox_base_url }}{{ branching_path }}?{{ branching_query }}"
+
+    - name: Build full Branching changes URL (no whitespace issues)
+      ansible.builtin.set_fact:
+        branching_url: "{{ netbox_base_url }}/api/plugins/branching/changes/?{{ branching_query }}"
 
     - name: Query Branching changes endpoint for this object
       ansible.builtin.uri:
