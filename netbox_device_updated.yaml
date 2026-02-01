@@ -11,17 +11,18 @@
 
   tasks:
     # ------------------------------------------------------------
-    # 1) Read device ID from webhook payload (AAP extra_vars)
+    # 1) Read device ID from webhook (AAP injects extra_vars directly)
     # ------------------------------------------------------------
-    - name: Extract device ID from webhook
-      ansible.builtin.set_fact:
-        device_id: "{{ extra_vars.device_data.id }}"
-
-    - name: Assert device ID is present
+    - name: Assert device_data is present
       ansible.builtin.assert:
         that:
-          - device_id is defined
-        fail_msg: "Webhook payload did not include extra_vars.device_data.id"
+          - device_data is defined
+          - device_data.id is defined
+        fail_msg: "Webhook payload did not inject device_data.id into the job"
+
+    - name: Set device_id from webhook
+      ansible.builtin.set_fact:
+        device_id: "{{ device_data.id }}"
 
     - name: Assert NetBox connection vars are present
       ansible.builtin.assert:
