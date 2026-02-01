@@ -1,56 +1,133 @@
-- name: Print NetBox device webhook data
+- name: Process NetBox device webhook (main branch only)
   hosts: localhost
   gather_facts: false
+
+  vars:
+    # Provide these via AAP credential/env vars/extra vars
+    netbox_url: "{{ lookup('env', 'NETBOX_URL') | default('', true) }}"
+    netbox_token: "{{ lookup('env', 'NETBOX_TOKEN') | default('', true) }}"
+
   tasks:
-    - name: Map NetBox webhook payload to vars (AAP/AWX)
-      ansible.builtin.set_fact:
-        device_data: "{{ awx_webhook_payload.data }}"
-        event_meta:
-          event_type: "{{ awx_webhook_payload.event | default('') }}"
-          model: "{{ awx_webhook_payload.model | default('') }}"
-          username: "{{ awx_webhook_payload.username | default('') }}"
-          request_id: "{{ awx_webhook_payload.request_id | default('') }}"
-      when:
-        - device_data is not defined
-        - event_meta is not defined
-        - awx_webhook_payload is defined
-        - awx_webhook_payload.data is defined
+    # --- Debug (keep while validating; remove later if you want) ---
+    - name: Show extra_vars if present (AAP injects NetBox webhook extra_vars here)
+      ansible.builtin.debug:
+        var: extra_vars
+      when: extra_vars is defined
 
-    - name: Map NetBox webhook payload to vars (legacy Tower)
-      ansible.builtin.set_fact:
-        device_data: "{{ tower_webhook_payload.data }}"
-        event_meta:
-          event_type: "{{ tower_webhook_payload.event | default('') }}"
-          model: "{{ tower_webhook_payload.model | default('') }}"
-          username: "{{ tower_webhook_payload.username | default('') }}"
-          request_id: "{{ tower_webhook_payload.request_id | default('') }}"
-      when:
-        - device_data is not defined
-        - event_meta is not defined
-        - tower_webhook_payload is defined
-        - tower_webhook_payload.data is defined
-
-    - name: Show webhook payload (AAP/AWX)
+    - name: Show awx_webhook_payload if present
       ansible.builtin.debug:
         var: awx_webhook_payload
       when: awx_webhook_payload is defined
 
-    - name: Show webhook payload (legacy Tower)
+    - name: Show tower_webhook_payload if present
       ansible.builtin.debug:
         var: tower_webhook_payload
       when: tower_webhook_payload is defined
 
-    - name: Show device data
+    # --- Map webhook vars (supports your NetBox template: { "extra_vars": { ... } }) ---
+    - name: Map NetBox webhook payload to vars (AAP/AWX/Tower) - supports extra_vars template
+      ansible.builtin.set_fact:
+        device_data: >-
+          {{
+            (extra_vars.device_data
+              | default(awx_webhook_payload.extra_vars.device_data, true)
+              | default(tower_webhook_payload.extra_vars.device_data, true)
+              | default(awx_webhook_payload.data, true)
+              | default(tower_webhook_payload.data, true)
+              | default({}, true))
+          }}
+        event_meta: >-
+          {{
+            (extra_vars.event_meta
+              | default(awx_webhook_payload.extra_vars.event_meta, true)
+              | default(tower_webhook_payload.extra_vars.event_meta, true)
+              | default({
+                  'event_type': (awx_webhook_payload.event | default(tower_webhook_payload.event, true) | default('')),
+                  'model': (awx_webhook_payload.model | default(tower_webhook_payload.model, true) | default('')),
+                  'username': (awx_webhook_payload.username | default(tower_webhook_payload.username, true) | default('')),
+                  'request_id': (awx_webhook_payload.request_id | default(tower_webhook_payload.request_id, true) | default(''))
+                }, true))
+          }}
+        branch_gate: >-
+          {{
+            (extra_vars.branch_gate
+              | default(awx_webhook_payload.extra_vars.branch_gate, true)
+              | default(tower_webhook_payload.extra_vars.branch_gate, true)
+              | default({}, true))
+          }}
+
+    - name: Assert webhook vars are present
+      ansible.builtin.assert:
+        that:
+          - device_data is mapping
+          - device_data.id is defined
+        fail_msg: >-
+          device_data.id not found. Check the debug output for extra_vars/awx_webhook_payload/tower_webhook_payload.
+
+    - name: Assert NetBox connection vars are present
+      ansible.builtin.assert:
+        that:
+          - netbox_url | length > 0
+          - netbox_token | length > 0
+        fail_msg: "Missing NETBOX_URL/NETBOX_TOKEN (set as env vars or supply as extra vars/credential)."
+
+    # --- Main-branch gate (skip if object has branch changes) ---
+    - name: Set branch gate inputs (fallbacks)
+      ansible.builtin.set_fact:
+        branch_object_id: "{{ branch_gate.object_id | default(device_data.id) }}"
+        branch_model: "{{ branch_gate.model | default('dcim.device') }}"
+
+    - name: Query Branching changes endpoint for this object
+      ansible.builtin.uri:
+        url: >-
+          {{ netbox_url | regex_replace('/$', '') }}/api/plugins/branching/changes/
+          ?object_id={{ branch_object_id }}&model={{ branch_model }}
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+          Accept: "application/json"
+        return_content: true
+        status_code: 200
+      register: branch_changes
+      retries: 3
+      delay: 1
+      until: branch_changes.status == 200
+
+    - name: Decide whether to proceed (main branch only)
+      ansible.builtin.set_fact:
+        is_main_branch: "{{ (branch_changes.json.results | default([]) | length) == 0 }}"
+        effective_branch: >-
+          {{
+            'main'
+            if (branch_changes.json.results | default([]) | length) == 0
+            else (branch_changes.json.results[0].branch.name | default('unknown'))
+          }}
+
+    - name: Skip if not main
+      ansible.builtin.debug:
+        msg: >-
+          Skipping automation: device {{ device_data.name | default(device_data.id) }}
+          has pending branch changes (effective_branch={{ effective_branch }}).
+          request_id={{ event_meta.request_id | default('') }}
+      when: not is_main_branch
+
+    - name: End play if not main
+      ansible.builtin.meta: end_play
+      when: not is_main_branch
+
+    # --- From here down: your existing “print/debug” tasks or real automation ---
+    - name: Show device data (main only)
       ansible.builtin.debug:
         var: device_data
-      when: device_data is defined
 
-    - name: Show event metadata
+    - name: Show event metadata (main only)
       ansible.builtin.debug:
         var: event_meta
-      when: event_meta is defined
 
-    - name: Show extra_vars if present
+    - name: Show branch gate inputs / decision (main only)
       ansible.builtin.debug:
-        var: extra_vars
-      when: extra_vars is defined
+        msg:
+          branch_object_id: "{{ branch_object_id }}"
+          branch_model: "{{ branch_model }}"
+          is_main_branch: "{{ is_main_branch }}"
+          effective_branch: "{{ effective_branch }}"
