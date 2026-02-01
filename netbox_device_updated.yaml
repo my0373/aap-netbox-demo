@@ -2,6 +2,15 @@
   hosts: localhost
   gather_facts: false
   tasks:
-    - name: Show all extra vars
+    - name: Show device data
+      ansible.builtin.debug:
+        var: device_data
+
+    - name: Show event metadata
+      ansible.builtin.debug:
+        var: event_meta
+
+    - name: Show extra_vars if present
       ansible.builtin.debug:
         var: extra_vars
+      when: extra_vars is defined
