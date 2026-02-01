@@ -1,18 +1,14 @@
-- name: Process NetBox device webhook (main branch only)
+- name: Process NetBox device webhook (main branch only) - DEBUG
   hosts: localhost
   gather_facts: false
   become: false
 
   vars:
-    # Inject via AAP Credential (recommended) or environment variables
     netbox_url: "{{ lookup('env', 'NETBOX_URL') | default('', true) }}"
     netbox_token: "{{ lookup('env', 'NETBOX_TOKEN') | default('', true) }}"
     netbox_validate_certs: true
 
   tasks:
-    # ----------------------------
-    # 1) Map webhook vars (supports NetBox template: { "extra_vars": { ... } })
-    # ----------------------------
     - name: Map NetBox webhook payload to vars (AAP/AWX/Tower) - supports extra_vars template
       ansible.builtin.set_fact:
         device_data: >-
@@ -49,9 +45,7 @@
         that:
           - device_data is mapping
           - device_data.id is defined
-        fail_msg: >-
-          device_data.id not found. Ensure NetBox webhook body template sends
-          extra_vars.device_data.id (and that AAP is receiving it).
+        fail_msg: "device_data.id not found in webhook vars."
 
     - name: Assert NetBox connection vars are present
       ansible.builtin.assert:
@@ -60,9 +54,6 @@
           - netbox_token | length > 0
         fail_msg: "Missing NETBOX_URL/NETBOX_TOKEN (inject via AAP Credential or env vars)."
 
-    # ----------------------------
-    # 2) Main-branch gate: query Branching changes endpoint
-    # ----------------------------
     - name: Set branch gate inputs (fallbacks)
       ansible.builtin.set_fact:
         branch_object_id: "{{ branch_gate.object_id | default(device_data.id) }}"
@@ -77,7 +68,11 @@
       ansible.builtin.set_fact:
         branching_url: "{{ netbox_base_url }}/api/plugins/branching/changes/?{{ branching_query }}"
 
-    - name: Query Branching changes endpoint for this object
+    - name: Show Branching URL (token not shown)
+      ansible.builtin.debug:
+        var: branching_url
+
+    - name: Query Branching changes endpoint for this object (DEBUG)
       ansible.builtin.uri:
         url: "{{ branching_url }}"
         method: GET
@@ -86,13 +81,22 @@
           Accept: "application/json"
         return_content: true
         validate_certs: "{{ netbox_validate_certs }}"
-        status_code: 200
       register: branch_changes
-      no_log: true
 
-    # ----------------------------
-    # 3) Decide / exit early
-    # ----------------------------
+    - name: Show HTTP result status/body (DEBUG)
+      ansible.builtin.debug:
+        msg:
+          status: "{{ branch_changes.status | default('unknown') }}"
+          body: "{{ branch_changes.content | default(branch_changes.msg | default('')) }}"
+
+    - name: Fail if Branching endpoint did not return HTTP 200
+      ansible.builtin.fail:
+        msg: >-
+          Branching changes lookup failed.
+          status={{ branch_changes.status | default('unknown') }}
+          body={{ branch_changes.content | default(branch_changes.msg | default('')) }}
+      when: (branch_changes.status | default(0)) != 200
+
     - name: Decide whether to proceed (main branch only)
       ansible.builtin.set_fact:
         is_main_branch: "{{ (branch_changes.json.results | default([]) | length) == 0 }}"
@@ -105,23 +109,13 @@
 
     - name: Skip if not main
       ansible.builtin.debug:
-        msg: >-
-          Skipping automation: device {{ device_data.name | default(device_data.id) }}
-          has pending branch changes (effective_branch={{ effective_branch }}).
-          request_id={{ event_meta.request_id | default('') }}
+        msg: "Skipping automation: device {{ device_data.name | default(device_data.id) }} is on branch {{ effective_branch }}"
       when: not is_main_branch
 
     - name: End play if not main
       ansible.builtin.meta: end_play
       when: not is_main_branch
 
-    # ----------------------------
-    # 4) Your automation begins here (main only)
-    # ----------------------------
     - name: Show device data (main only)
       ansible.builtin.debug:
         var: device_data
-
-    - name: Show event metadata (main only)
-      ansible.builtin.debug:
-        var: event_meta
