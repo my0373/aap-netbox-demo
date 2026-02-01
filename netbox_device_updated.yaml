@@ -2,13 +2,25 @@
   hosts: localhost
   gather_facts: false
   tasks:
+    - name: Show webhook payload (AAP/AWX)
+      ansible.builtin.debug:
+        var: awx_webhook_payload
+      when: awx_webhook_payload is defined
+
+    - name: Show webhook payload (legacy Tower)
+      ansible.builtin.debug:
+        var: tower_webhook_payload
+      when: tower_webhook_payload is defined
+
     - name: Show device data
       ansible.builtin.debug:
         var: device_data
+      when: device_data is defined
 
     - name: Show event metadata
       ansible.builtin.debug:
         var: event_meta
+      when: event_meta is defined
 
     - name: Show extra_vars if present
       ansible.builtin.debug:
