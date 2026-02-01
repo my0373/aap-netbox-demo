@@ -11,23 +11,17 @@
 
   tasks:
     # ------------------------------------------------------------
-    # 1) Read device ID from webhook payload
-    #    (matches your NetBox webhook body template using extra_vars)
+    # 1) Read device ID from webhook payload (AAP extra_vars)
     # ------------------------------------------------------------
-    - name: Map NetBox webhook payload to vars
+    - name: Extract device ID from webhook
       ansible.builtin.set_fact:
-        device_id: >-
-          {{
-            (extra_vars.device_data.id
-              | default(awx_webhook_payload.extra_vars.device_data.id, true)
-              | default(tower_webhook_payload.extra_vars.device_data.id, true))
-          }}
+        device_id: "{{ extra_vars.device_data.id }}"
 
     - name: Assert device ID is present
       ansible.builtin.assert:
         that:
           - device_id is defined
-        fail_msg: "Webhook payload did not include device_data.id"
+        fail_msg: "Webhook payload did not include extra_vars.device_data.id"
 
     - name: Assert NetBox connection vars are present
       ansible.builtin.assert:
@@ -37,13 +31,11 @@
         fail_msg: "Missing netbox_url / netbox_token (AAP credential or env vars)"
 
     # ------------------------------------------------------------
-    # 2) Fetch device from MAIN branch (authoritative)
-    #    No branch headers = MAIN by definition
+    # 2) Fetch device from NetBox MAIN branch
     # ------------------------------------------------------------
     - name: Build NetBox device API URL (MAIN)
       ansible.builtin.set_fact:
-        netbox_base_url: "{{ netbox_url | regex_replace('/$', '') }}"
-        device_api_url: "{{ netbox_base_url }}/api/dcim/devices/{{ device_id }}/"
+        device_api_url: "{{ netbox_url | regex_replace('/$', '') }}/api/dcim/devices/{{ device_id }}/"
 
     - name: Get device from NetBox MAIN
       ansible.builtin.uri:
