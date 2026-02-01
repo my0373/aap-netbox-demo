@@ -1,36 +1,17 @@
 - name: Process NetBox device webhook (main branch only)
   hosts: localhost
   gather_facts: false
+  become: false
 
   vars:
     # Inject these via an AAP Credential (recommended) or environment variables
     netbox_url: "{{ lookup('env', 'NETBOX_URL') | default('', true) }}"
     netbox_token: "{{ lookup('env', 'NETBOX_TOKEN') | default('', true) }}"
-
-    # Set to false only if you're using an internal CA and haven't installed it in AAP execution env yet
     netbox_validate_certs: true
 
   tasks:
     # ----------------------------
-    # 1) (Optional) Show what AAP provided
-    # ----------------------------
-    - name: Show extra_vars if present (AAP often injects NetBox webhook extra_vars here)
-      ansible.builtin.debug:
-        var: extra_vars
-      when: extra_vars is defined
-
-    - name: Show awx_webhook_payload if present
-      ansible.builtin.debug:
-        var: awx_webhook_payload
-      when: awx_webhook_payload is defined
-
-    - name: Show tower_webhook_payload if present (legacy Tower)
-      ansible.builtin.debug:
-        var: tower_webhook_payload
-      when: tower_webhook_payload is defined
-
-    # ----------------------------
-    # 2) Map webhook vars (supports your NetBox template: { "extra_vars": { ... } })
+    # 1) Map webhook vars (supports your NetBox template: { "extra_vars": { ... } })
     # ----------------------------
     - name: Map NetBox webhook payload to vars (AAP/AWX/Tower) - supports extra_vars template
       ansible.builtin.set_fact:
@@ -80,16 +61,14 @@
         fail_msg: "Missing NETBOX_URL/NETBOX_TOKEN (inject via AAP Credential or env vars)."
 
     # ----------------------------
-    # 3) Main-branch gate: query Branching changes endpoint; skip if object has branch changes
-    # NOTE: no_log is disabled here ON PURPOSE so you can see the real error in AAP.
-    # After it works, set branch_changes_no_log: true in the vars section below.
+    # 2) Main-branch gate
     # ----------------------------
     - name: Set branch gate inputs (fallbacks)
       ansible.builtin.set_fact:
         branch_object_id: "{{ branch_gate.object_id | default(device_data.id) }}"
         branch_model: "{{ branch_gate.model | default('dcim.device') }}"
 
-    - name: Query Branching changes endpoint for this object (debuggable)
+    - name: Query Branching changes endpoint for this object
       ansible.builtin.uri:
         url: >-
           {{ netbox_url | regex_replace('/$', '') }}/api/plugins/branching/changes/
@@ -102,7 +81,7 @@
         validate_certs: "{{ netbox_validate_certs }}"
       register: branch_changes
 
-    - name: Fail with clear message if Branching changes endpoint did not return HTTP 200
+    - name: Fail with clear message if Branching endpoint did not return HTTP 200
       ansible.builtin.fail:
         msg: >-
           Branching changes lookup failed.
@@ -133,7 +112,7 @@
       when: not is_main_branch
 
     # ----------------------------
-    # 4) Automation continues here (runs only on main)
+    # 3) Your real automation starts here (runs only on main)
     # ----------------------------
     - name: Show device data (main only)
       ansible.builtin.debug:
@@ -142,11 +121,3 @@
     - name: Show event metadata (main only)
       ansible.builtin.debug:
         var: event_meta
-
-    - name: Show branch decision (main only)
-      ansible.builtin.debug:
-        msg:
-          branch_object_id: "{{ branch_object_id }}"
-          branch_model: "{{ branch_model }}"
-          is_main_branch: "{{ is_main_branch }}"
-          effective_branch: "{{ effective_branch }}"
