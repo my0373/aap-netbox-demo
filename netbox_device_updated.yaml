@@ -2,6 +2,34 @@
   hosts: localhost
   gather_facts: false
   tasks:
+    - name: Map NetBox webhook payload to vars (AAP/AWX)
+      ansible.builtin.set_fact:
+        device_data: "{{ awx_webhook_payload.data }}"
+        event_meta:
+          event_type: "{{ awx_webhook_payload.event | default('') }}"
+          model: "{{ awx_webhook_payload.model | default('') }}"
+          username: "{{ awx_webhook_payload.username | default('') }}"
+          request_id: "{{ awx_webhook_payload.request_id | default('') }}"
+      when:
+        - device_data is not defined
+        - event_meta is not defined
+        - awx_webhook_payload is defined
+        - awx_webhook_payload.data is defined
+
+    - name: Map NetBox webhook payload to vars (legacy Tower)
+      ansible.builtin.set_fact:
+        device_data: "{{ tower_webhook_payload.data }}"
+        event_meta:
+          event_type: "{{ tower_webhook_payload.event | default('') }}"
+          model: "{{ tower_webhook_payload.model | default('') }}"
+          username: "{{ tower_webhook_payload.username | default('') }}"
+          request_id: "{{ tower_webhook_payload.request_id | default('') }}"
+      when:
+        - device_data is not defined
+        - event_meta is not defined
+        - tower_webhook_payload is defined
+        - tower_webhook_payload.data is defined
+
     - name: Show webhook payload (AAP/AWX)
       ansible.builtin.debug:
         var: awx_webhook_payload
