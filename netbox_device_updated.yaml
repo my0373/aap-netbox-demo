@@ -2,6 +2,6 @@
   hosts: localhost
   gather_facts: false
   tasks:
-    - name: Show all vars
+    - name: Show all extra vars
       ansible.builtin.debug:
-        var: vars
+        var: extra_vars
