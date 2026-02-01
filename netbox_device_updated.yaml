@@ -3,12 +3,17 @@
   gather_facts: false
 
   vars:
-    # Recommended: inject these via an AAP Credential (env vars)
+    # Inject these via an AAP Credential (recommended) or environment variables
     netbox_url: "{{ lookup('env', 'NETBOX_URL') | default('', true) }}"
     netbox_token: "{{ lookup('env', 'NETBOX_TOKEN') | default('', true) }}"
 
+    # Set to false only if you're using an internal CA and haven't installed it in AAP execution env yet
+    netbox_validate_certs: true
+
   tasks:
-    # --- Optional debug (kept safe; skips if not present) ---
+    # ----------------------------
+    # 1) (Optional) Show what AAP provided
+    # ----------------------------
     - name: Show extra_vars if present (AAP often injects NetBox webhook extra_vars here)
       ansible.builtin.debug:
         var: extra_vars
@@ -24,7 +29,9 @@
         var: tower_webhook_payload
       when: tower_webhook_payload is defined
 
-    # --- Map webhook vars (supports your NetBox template: { "extra_vars": { ... } }) ---
+    # ----------------------------
+    # 2) Map webhook vars (supports your NetBox template: { "extra_vars": { ... } })
+    # ----------------------------
     - name: Map NetBox webhook payload to vars (AAP/AWX/Tower) - supports extra_vars template
       ansible.builtin.set_fact:
         device_data: >-
@@ -62,7 +69,7 @@
           - device_data is mapping
           - device_data.id is defined
         fail_msg: >-
-          device_data.id not found. Ensure NetBox webhook body template sends
+          device_data.id not found. Ensure the NetBox webhook body template sends
           extra_vars.device_data.id (and that AAP is receiving it).
 
     - name: Assert NetBox connection vars are present
@@ -72,13 +79,17 @@
           - netbox_token | length > 0
         fail_msg: "Missing NETBOX_URL/NETBOX_TOKEN (inject via AAP Credential or env vars)."
 
-    # --- Main-branch gate: query Branching changes endpoint; skip if object has branch changes ---
+    # ----------------------------
+    # 3) Main-branch gate: query Branching changes endpoint; skip if object has branch changes
+    # NOTE: no_log is disabled here ON PURPOSE so you can see the real error in AAP.
+    # After it works, set branch_changes_no_log: true in the vars section below.
+    # ----------------------------
     - name: Set branch gate inputs (fallbacks)
       ansible.builtin.set_fact:
         branch_object_id: "{{ branch_gate.object_id | default(device_data.id) }}"
         branch_model: "{{ branch_gate.model | default('dcim.device') }}"
 
-    - name: Query Branching changes endpoint for this object
+    - name: Query Branching changes endpoint for this object (debuggable)
       ansible.builtin.uri:
         url: >-
           {{ netbox_url | regex_replace('/$', '') }}/api/plugins/branching/changes/
@@ -88,9 +99,16 @@
           Authorization: "Token {{ netbox_token }}"
           Accept: "application/json"
         return_content: true
-        status_code: 200
+        validate_certs: "{{ netbox_validate_certs }}"
       register: branch_changes
-      no_log: true  # prevents headers/token from being printed if verbosity is high
+
+    - name: Fail with clear message if Branching changes endpoint did not return HTTP 200
+      ansible.builtin.fail:
+        msg: >-
+          Branching changes lookup failed.
+          status={{ branch_changes.status | default('unknown') }}
+          body={{ branch_changes.content | default(branch_changes.msg | default('')) }}
+      when: (branch_changes.status | default(0)) != 200
 
     - name: Decide whether to proceed (main branch only)
       ansible.builtin.set_fact:
@@ -114,7 +132,9 @@
       ansible.builtin.meta: end_play
       when: not is_main_branch
 
-    # --- From here down: your automation (runs only on main) ---
+    # ----------------------------
+    # 4) Automation continues here (runs only on main)
+    # ----------------------------
     - name: Show device data (main only)
       ansible.builtin.debug:
         var: device_data
