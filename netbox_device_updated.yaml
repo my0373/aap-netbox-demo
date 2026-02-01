@@ -1,121 +1,66 @@
-- name: Process NetBox device webhook (main branch only) - DEBUG
+- name: NetBox device webhook - read MAIN and print
   hosts: localhost
   gather_facts: false
   become: false
 
   vars:
-    netbox_url: "{{ lookup('env', 'NETBOX_URL') | default('', true) }}"
-    netbox_token: "{{ lookup('env', 'NETBOX_TOKEN') | default('', true) }}"
+    # Inject via AAP Credential (env vars) or Job Template extra vars
+    netbox_url: "{{ netbox_url | default(lookup('env', 'NETBOX_URL'), true) | default('', true) }}"
+    netbox_token: "{{ netbox_token | default(lookup('env', 'NETBOX_TOKEN'), true) | default('', true) }}"
     netbox_validate_certs: true
 
   tasks:
-    - name: Map NetBox webhook payload to vars (AAP/AWX/Tower) - supports extra_vars template
+    # ------------------------------------------------------------
+    # 1) Read device ID from webhook payload
+    #    (matches your NetBox webhook body template using extra_vars)
+    # ------------------------------------------------------------
+    - name: Map NetBox webhook payload to vars
       ansible.builtin.set_fact:
-        device_data: >-
+        device_id: >-
           {{
-            (extra_vars.device_data
-              | default(awx_webhook_payload.extra_vars.device_data, true)
-              | default(tower_webhook_payload.extra_vars.device_data, true)
-              | default(awx_webhook_payload.data, true)
-              | default(tower_webhook_payload.data, true)
-              | default({}, true))
-          }}
-        event_meta: >-
-          {{
-            (extra_vars.event_meta
-              | default(awx_webhook_payload.extra_vars.event_meta, true)
-              | default(tower_webhook_payload.extra_vars.event_meta, true)
-              | default({
-                  'event_type': (awx_webhook_payload.event | default(tower_webhook_payload.event, true) | default('')),
-                  'model': (awx_webhook_payload.model | default(tower_webhook_payload.model, true) | default('')),
-                  'username': (awx_webhook_payload.username | default(tower_webhook_payload.username, true) | default('')),
-                  'request_id': (awx_webhook_payload.request_id | default(tower_webhook_payload.request_id, true) | default(''))
-                }, true))
-          }}
-        branch_gate: >-
-          {{
-            (extra_vars.branch_gate
-              | default(awx_webhook_payload.extra_vars.branch_gate, true)
-              | default(tower_webhook_payload.extra_vars.branch_gate, true)
-              | default({}, true))
+            (extra_vars.device_data.id
+              | default(awx_webhook_payload.extra_vars.device_data.id, true)
+              | default(tower_webhook_payload.extra_vars.device_data.id, true))
           }}
 
-    - name: Assert webhook vars are present
+    - name: Assert device ID is present
       ansible.builtin.assert:
         that:
-          - device_data is mapping
-          - device_data.id is defined
-        fail_msg: "device_data.id not found in webhook vars."
+          - device_id is defined
+        fail_msg: "Webhook payload did not include device_data.id"
 
     - name: Assert NetBox connection vars are present
       ansible.builtin.assert:
         that:
           - netbox_url | length > 0
           - netbox_token | length > 0
-        fail_msg: "Missing NETBOX_URL/NETBOX_TOKEN (inject via AAP Credential or env vars)."
+        fail_msg: "Missing netbox_url / netbox_token (AAP credential or env vars)"
 
-    - name: Set branch gate inputs (fallbacks)
-      ansible.builtin.set_fact:
-        branch_object_id: "{{ branch_gate.object_id | default(device_data.id) }}"
-        branch_model: "{{ branch_gate.model | default('dcim.device') }}"
-
-    - name: Build base URL and query string for Branching changes lookup
+    # ------------------------------------------------------------
+    # 2) Fetch device from MAIN branch (authoritative)
+    #    No branch headers = MAIN by definition
+    # ------------------------------------------------------------
+    - name: Build NetBox device API URL (MAIN)
       ansible.builtin.set_fact:
         netbox_base_url: "{{ netbox_url | regex_replace('/$', '') }}"
-        branching_query: "object_id={{ branch_object_id }}&model={{ branch_model }}"
+        device_api_url: "{{ netbox_base_url }}/api/dcim/devices/{{ device_id }}/"
 
-    - name: Build full Branching changes URL (no whitespace issues)
-      ansible.builtin.set_fact:
-        branching_url: "{{ netbox_base_url }}/api/plugins/branching/changes/?{{ branching_query }}"
-
-    - name: Show Branching URL (token not shown)
-      ansible.builtin.debug:
-        var: branching_url
-
-    - name: Query Branching changes endpoint for this object (DEBUG)
+    - name: Get device from NetBox MAIN
       ansible.builtin.uri:
-        url: "{{ branching_url }}"
+        url: "{{ device_api_url }}"
         method: GET
         headers:
           Authorization: "Token {{ netbox_token }}"
           Accept: "application/json"
         return_content: true
         validate_certs: "{{ netbox_validate_certs }}"
-      register: branch_changes
+        status_code: 200
+      register: device_main
+      no_log: true
 
-    - name: Show HTTP result status/body (DEBUG)
+    # ------------------------------------------------------------
+    # 3) Print authoritative MAIN data
+    # ------------------------------------------------------------
+    - name: Show device data from MAIN branch
       ansible.builtin.debug:
-        msg:
-          status: "{{ branch_changes.status | default('unknown') }}"
-          body: "{{ branch_changes.content | default(branch_changes.msg | default('')) }}"
-
-    - name: Fail if Branching endpoint did not return HTTP 200
-      ansible.builtin.fail:
-        msg: >-
-          Branching changes lookup failed.
-          status={{ branch_changes.status | default('unknown') }}
-          body={{ branch_changes.content | default(branch_changes.msg | default('')) }}
-      when: (branch_changes.status | default(0)) != 200
-
-    - name: Decide whether to proceed (main branch only)
-      ansible.builtin.set_fact:
-        is_main_branch: "{{ (branch_changes.json.results | default([]) | length) == 0 }}"
-        effective_branch: >-
-          {{
-            'main'
-            if (branch_changes.json.results | default([]) | length) == 0
-            else (branch_changes.json.results[0].branch.name | default('unknown'))
-          }}
-
-    - name: Skip if not main
-      ansible.builtin.debug:
-        msg: "Skipping automation: device {{ device_data.name | default(device_data.id) }} is on branch {{ effective_branch }}"
-      when: not is_main_branch
-
-    - name: End play if not main
-      ansible.builtin.meta: end_play
-      when: not is_main_branch
-
-    - name: Show device data (main only)
-      ansible.builtin.debug:
-        var: device_data
+        var: device_main.json
