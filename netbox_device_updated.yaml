@@ -4,14 +4,14 @@
   become: false
 
   vars:
-    # Inject these via an AAP Credential (recommended) or environment variables
+    # Inject via AAP Credential (recommended) or environment variables
     netbox_url: "{{ lookup('env', 'NETBOX_URL') | default('', true) }}"
     netbox_token: "{{ lookup('env', 'NETBOX_TOKEN') | default('', true) }}"
     netbox_validate_certs: true
 
   tasks:
     # ----------------------------
-    # 1) Map webhook vars (supports your NetBox template: { "extra_vars": { ... } })
+    # 1) Map webhook vars (supports NetBox template: { "extra_vars": { ... } })
     # ----------------------------
     - name: Map NetBox webhook payload to vars (AAP/AWX/Tower) - supports extra_vars template
       ansible.builtin.set_fact:
@@ -50,7 +50,7 @@
           - device_data is mapping
           - device_data.id is defined
         fail_msg: >-
-          device_data.id not found. Ensure the NetBox webhook body template sends
+          device_data.id not found. Ensure NetBox webhook body template sends
           extra_vars.device_data.id (and that AAP is receiving it).
 
     - name: Assert NetBox connection vars are present
@@ -61,34 +61,36 @@
         fail_msg: "Missing NETBOX_URL/NETBOX_TOKEN (inject via AAP Credential or env vars)."
 
     # ----------------------------
-    # 2) Main-branch gate
+    # 2) Main-branch gate: query Branching changes endpoint
     # ----------------------------
     - name: Set branch gate inputs (fallbacks)
       ansible.builtin.set_fact:
         branch_object_id: "{{ branch_gate.object_id | default(device_data.id) }}"
         branch_model: "{{ branch_gate.model | default('dcim.device') }}"
 
+    - name: Build Branching changes URL (no whitespace issues)
+      ansible.builtin.set_fact:
+        netbox_base_url: "{{ netbox_url | regex_replace('/$', '') }}"
+        branching_path: "/api/plugins/branching/changes/"
+        branching_query: "object_id={{ branch_object_id }}&model={{ branch_model }}"
+        branching_url: "{{ netbox_base_url }}{{ branching_path }}?{{ branching_query }}"
+
     - name: Query Branching changes endpoint for this object
       ansible.builtin.uri:
-        url: >-
-          {{ netbox_url | regex_replace('/$', '') }}/api/plugins/branching/changes/
-          ?object_id={{ branch_object_id }}&model={{ branch_model }}
+        url: "{{ branching_url }}"
         method: GET
         headers:
           Authorization: "Token {{ netbox_token }}"
           Accept: "application/json"
         return_content: true
         validate_certs: "{{ netbox_validate_certs }}"
+        status_code: 200
       register: branch_changes
+      no_log: true
 
-    - name: Fail with clear message if Branching endpoint did not return HTTP 200
-      ansible.builtin.fail:
-        msg: >-
-          Branching changes lookup failed.
-          status={{ branch_changes.status | default('unknown') }}
-          body={{ branch_changes.content | default(branch_changes.msg | default('')) }}
-      when: (branch_changes.status | default(0)) != 200
-
+    # ----------------------------
+    # 3) Decide / exit early
+    # ----------------------------
     - name: Decide whether to proceed (main branch only)
       ansible.builtin.set_fact:
         is_main_branch: "{{ (branch_changes.json.results | default([]) | length) == 0 }}"
@@ -112,7 +114,7 @@
       when: not is_main_branch
 
     # ----------------------------
-    # 3) Your real automation starts here (runs only on main)
+    # 4) Your automation begins here (main only)
     # ----------------------------
     - name: Show device data (main only)
       ansible.builtin.debug:
