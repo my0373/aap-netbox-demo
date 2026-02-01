@@ -29,4 +29,33 @@
     - name: Assert NetBox connection vars are present
       ansible.builtin.assert:
         that:
-          - netbox
+          - netbox_url | length > 0
+          - netbox_token | length > 0
+        fail_msg: "NETBOX_URL / NETBOX_TOKEN not set via AAP credential"
+
+    # ------------------------------------------------------------
+    # 3) Fetch device from NetBox MAIN branch
+    # ------------------------------------------------------------
+    - name: Build NetBox device API URL (MAIN)
+      ansible.builtin.set_fact:
+        device_api_url: "{{ netbox_url | regex_replace('/$', '') }}/api/dcim/devices/{{ device_id }}/"
+
+    - name: Get device from NetBox MAIN
+      ansible.builtin.uri:
+        url: "{{ device_api_url }}"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+          Accept: "application/json"
+        return_content: true
+        validate_certs: true
+        status_code: 200
+      register: device_main
+      no_log: true
+
+    # ------------------------------------------------------------
+    # 4) Print authoritative MAIN data
+    # ------------------------------------------------------------
+    - name: Show device data from MAIN branch
+      ansible.builtin.debug:
+        var: device_main.json
